@@ -47,7 +47,7 @@ def zip_file(path):
   zip_name = os.path.join(directory, os.path.basename(path) + ".zip")
 
   with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipObj:
-    zipObj.write(zip_name)
+    zipObj.write(path)
 
   return zip_name
 
