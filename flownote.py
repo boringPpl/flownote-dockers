@@ -79,11 +79,11 @@ def remote(params, flags):
 
   if params[0] == "metadata":
     check_params()
-    run_cmd("git remote remove origin || true")
+    run_cmd("git remote remove origin >/dev/null 2>&1 || true")
     run_cmd("git remote add origin {}".format(params[1]))
   elif params[0] == "data":
     check_params()
-    run_cmd("dvc remote remove origin || true")
+    run_cmd("dvc remote remove origin >/dev/null 2>&1 || true")
     run_cmd("dvc remote add -d origin {}".format(params[1]))
   elif params[0] == "list":
     run_cmd("git remote -v")
@@ -158,7 +158,7 @@ def checkout(params, flags):
   if "--unzip" in flags: scan_and_unzip()
 
 def pull(params, flags):
-  run_cmd("git pull && dvc pull")
+  run_cmd("git pull origin master && dvc pull")
   if "--unzip" in flags: scan_and_unzip()
 
 def ls(params, flags):
@@ -199,7 +199,7 @@ remote:
     desc: set origin remote for git repo (metadata only)
     example: flownote remote metadata https://github.com/project
   data:
-    desc: set origin remote for dvc repo (real data storage)
+    desc: set origin remote for dvc repo (data storage)
     example: flownote remote data s3://bucket/path/to/dir
   list:
     example: flownote remote list
