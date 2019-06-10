@@ -153,7 +153,7 @@ def scan_and_unzip():
 def checkout(params, flags):
   tag = params[0] if len(params) >= 1 else "master"
   dvc_remote = subprocess.check_output(["dvc", "remote", "list"])
-  dvc_pull = "&& dvc pull" if 'origin' in dvc_remote else ''
+  dvc_pull = "&& dvc pull" if 'origin' in dvc_remote.decode("utf-8") else ''
   run_cmd("git checkout {} && git clean -fd {} && dvc checkout".format(tag, dvc_pull))
   if "--unzip" in flags: scan_and_unzip()
 
