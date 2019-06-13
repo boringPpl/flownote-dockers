@@ -129,7 +129,7 @@ def commit(params, flags):
 
 def push(params, flags):
   if len(params) == 0:
-    eprint("HB-ERROR: Missing tag")
+    eprint("HB-ERROR: Missing version")
     return sys.exit(2)
 
   tag = params[0]
@@ -172,6 +172,9 @@ def ls(params, flags):
 
   oprint("\n".join(dvc_files))
 
+def version(params, flags):
+  run_cmd("git describe --tags")
+
 def versions(params, flags):
   run_cmd("git for-each-ref --sort=-taggerdate --format '%(refname:short) | %(subject)' refs/tags")
 
@@ -185,8 +188,8 @@ commands = {
   "checkout": checkout,
   "pull": pull,
   "ls": ls,
+  "version": version,
   "versions": versions,
-  "version": versions,
   "remote": remote
 }
 
@@ -229,7 +232,11 @@ pull:
 ls:
   desc: list current commited files
   example: flownote ls
+version:
+  desc: get current version
+  example: flownote version
 versions:
+  desc: list all the versions you pushed
   example: flownote versions
 """
 
