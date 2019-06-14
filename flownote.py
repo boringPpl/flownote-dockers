@@ -74,7 +74,7 @@ def init(params, flags):
 def remote(params, flags):
   def check_params():
     if len(params) < 2:
-      eprint("HB-ERROR: Missing remoteUrl")
+      eprint("FLOWNOTE-ERROR: Missing remoteUrl")
       sys.exit(2)
 
   if params[0] == "metadata":
@@ -89,7 +89,7 @@ def remote(params, flags):
     run_cmd("git remote -v")
     run_cmd("dvc remote list")
   else:
-    eprint("HB-ERROR: Unsupported Commands")
+    eprint("FLOWNOTE-ERROR: Unsupported Commands")
     sys.exit(2)
 
 def add(params, flags):
@@ -120,7 +120,7 @@ def clone(params, flags):
 
 def commit(params, flags):
   if len(params) == 0:
-    eprint("HB-ERROR: Missing message")
+    eprint("FLOWNOTE-ERROR: Missing message")
     return sys.exit(2)
 
   msg = params[0]
@@ -129,7 +129,7 @@ def commit(params, flags):
 
 def push(params, flags):
   if len(params) == 0:
-    eprint("HB-ERROR: Missing version")
+    eprint("FLOWNOTE-ERROR: Missing version")
     return sys.exit(2)
 
   tag = params[0]
