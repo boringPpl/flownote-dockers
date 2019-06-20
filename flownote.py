@@ -136,6 +136,7 @@ def push(params, flags):
   remote = params[1] if len(params) == 2 else "origin"
   branch = params[2] if len(params) == 3 else "master"
 
+  run_cmd("git pull -X ours --no-edit")
   run_cmd("git tag {} || true".format(tag))
   run_cmd("git push {1} {2} && git push {1} {0} && dvc push".format(tag, remote, branch))
 
