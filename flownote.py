@@ -15,11 +15,11 @@ def eprint(*args, **kwargs):
 def oprint(*args, **kwargs):
   print(*args, file=sys.stdout, **kwargs)
 
-def run_cmd(cmd):
+def run_cmd(cmd, err = "Unknown"):
   exit_code = os.system(cmd)
 
   if exit_code != 0:
-    eprint("FLOWNOTE-ERROR ===========")
+    eprint("FLOWNOTE-ERROR: {}\n".format(err))
     if exit_code > 127: exit_code = 1
     sys.exit(exit_code)
 
@@ -35,7 +35,7 @@ def zip_dir(path):
   directory = os.path.dirname(path)
   zip_name = os.path.join(directory, os.path.basename(path) + ".zip")
 
-  with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipObj:
+  with zipfile.ZipFile(zip_name, "w", zipfile.ZIP_DEFLATED) as zipObj:
     for root, dirs, files in os.walk(path):
       for file in files:
         zipObj.write(os.path.join(root, file))
@@ -46,7 +46,7 @@ def zip_file(path):
   directory = os.path.dirname(path)
   zip_name = os.path.join(directory, os.path.basename(path) + ".zip")
 
-  with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipObj:
+  with zipfile.ZipFile(zip_name, "w", zipfile.ZIP_DEFLATED) as zipObj:
     zipObj.write(path)
 
   return zip_name
@@ -57,7 +57,7 @@ def unzip(files):
   for file in files:
     file_name = os.path.splitext(file)[0]
     if os.path.exists(file):
-      with zipfile.ZipFile(file, 'r') as zipObj:
+      with zipfile.ZipFile(file, "r") as zipObj:
         base_dir = os.path.dirname(file_name)
         if base_dir != "":
           zipObj.extractall(base_dir)
@@ -65,16 +65,16 @@ def unzip(files):
           zipObj.extractall()
 
 def init(params, flags):
-  if not os.path.exists('.git'):
-    run_cmd("git init")
+  if not os.path.exists(".git"):
+    run_cmd("git init", "Unable to initialize Git")
 
-  if not os.path.exists('.dvc'):
-    run_cmd("dvc init")
+  if not os.path.exists(".dvc"):
+    run_cmd("dvc init", "Unable to initialize DVC")
 
 def remote(params, flags):
   def check_params():
     if len(params) < 2:
-      eprint("FLOWNOTE-ERROR: Missing remoteUrl")
+      eprint("FLOWNOTE-ERROR: Missing remoteUrl\n")
       sys.exit(2)
 
   if params[0] == "metadata":
@@ -89,56 +89,56 @@ def remote(params, flags):
     run_cmd("git remote -v")
     run_cmd("dvc remote list")
   else:
-    eprint("FLOWNOTE-ERROR: Unsupported Commands")
+    eprint("FLOWNOTE-ERROR: Unsupported Commands\n")
     sys.exit(2)
 
 def add(params, flags):
   if len(params) == 0: return
 
   if "--zip" not in flags:
-    return run_cmd("dvc add " + " ".join(map(str, params)))
+    return run_cmd("dvc add " + " ".join(map(str, params)), "Unable to add files")
 
   files = []
 
   for file_path in params:
     if os.path.isdir(file_path):
-      formatted_path = re.sub(r'/$', '', file_path)
+      formatted_path = re.sub(r"/$", "", file_path)
       zip_name = zip_dir(formatted_path)
       files.append(zip_name)
     else:
       zip_name = zip_file(file_path)
       files.append(zip_name)
 
-  run_cmd("dvc add " + " ".join(files))
+  run_cmd("dvc add " + " ".join(files), "Unable to add files")
 
 def remove(params, flags):
   if len(params) == 0: return
-  run_cmd("dvc remove -p -f " + " ".join(map(format_dvc, params)))
+  run_cmd("dvc remove -p -f " + " ".join(map(format_dvc, params)), "Unable to remove files")
 
 def clone(params, flags):
-  run_cmd("git clone " + " ".join(map(str, params)))
+  run_cmd("git clone " + " ".join(map(str, params)), "Unable to clone repo")
 
 def commit(params, flags):
   if len(params) == 0:
-    eprint("FLOWNOTE-ERROR: Missing message")
+    eprint("FLOWNOTE-ERROR: Missing message\n")
     return sys.exit(2)
 
   msg = params[0]
   cmd = "git ls-files --other --modified --exclude-standard | grep '.dvc\\|.gitignore' | xargs git add && git commit -m '{}'".format(msg)
-  run_cmd(cmd)
+  run_cmd(cmd, "Unable to list files")
 
 def push(params, flags):
   if len(params) == 0:
-    eprint("FLOWNOTE-ERROR: Missing version")
+    eprint("FLOWNOTE-ERROR: Missing version\n")
     return sys.exit(2)
 
   tag = params[0]
   remote = params[1] if len(params) == 2 else "origin"
   branch = params[2] if len(params) == 3 else "master"
 
-  run_cmd("git pull -X ours --no-edit")
+  run_cmd("git pull -X ours --no-edit", "Unable to merge automatically")
   run_cmd("git tag {} || true".format(tag))
-  run_cmd("git push {1} {2} && git push {1} {0} && dvc push".format(tag, remote, branch))
+  run_cmd("git push {1} {2} && git push {1} {0} && dvc push".format(tag, remote, branch), "Unable to push")
 
 def scan_and_unzip():
   zip_files = []
@@ -146,20 +146,24 @@ def scan_and_unzip():
   git_files = files_str.decode("utf-8").split("\n")
 
   for file in git_files:
-    if file.endswith('.zip.dvc'):
+    if file.endswith(".zip.dvc"):
       zip_files.append(os.path.splitext(file)[0])
 
   unzip(zip_files)
 
 def checkout(params, flags):
   tag = params[0] if len(params) >= 1 else "master"
-  dvc_remote = subprocess.check_output(["dvc", "remote", "list"])
-  dvc_pull = "&& dvc pull" if dvc_remote.decode("utf-8") != '' else ''
-  run_cmd("git checkout {} && git clean -fd {} && dvc checkout".format(tag, dvc_pull))
+  try:
+    dvc_remote = subprocess.check_output(["dvc", "remote", "list"])
+  except subprocess.CalledProcessError as e:
+    dvc_remote = ""
+
+  dvc_pull = "&& dvc pull" if dvc_remote.decode("utf-8") != "" else ""
+  run_cmd("git checkout {} && git clean -fd {} && dvc checkout".format(tag, dvc_pull), "Unable to checkout")
   if "--unzip" in flags: scan_and_unzip()
 
 def pull(params, flags):
-  run_cmd("git pull origin master && dvc pull")
+  run_cmd("git pull origin master && dvc pull", "Unable to pull")
   if "--unzip" in flags: scan_and_unzip()
 
 def ls(params, flags):
@@ -168,16 +172,16 @@ def ls(params, flags):
   dvc_files = []
 
   for file in git_files:
-    if file.endswith('.dvc'):
+    if file.endswith(".dvc"):
       dvc_files.append(os.path.splitext(file)[0])
 
   oprint("\n".join(dvc_files))
 
 def version(params, flags):
-  run_cmd("git describe --tags")
+  run_cmd("git describe --tags", "Unable to get current version")
 
 def versions(params, flags):
-  run_cmd("git for-each-ref --sort=-taggerdate --format '%(refname:short) | %(subject)' refs/tags")
+  run_cmd("git for-each-ref --sort=-taggerdate --format '%(refname:short) | %(subject)' refs/tags", "Unable to list versions")
 
 commands = {
   "init": init,
@@ -242,7 +246,7 @@ versions:
 """
 
 if __name__ == "__main__":
-  if len(sys.argv) == 1 or '--help' in sys.argv:
+  if len(sys.argv) == 1 or "--help" in sys.argv:
     print(help_command)
     sys.exit(0)
 
@@ -251,7 +255,7 @@ if __name__ == "__main__":
     params = []
     flags = []
     for a in sys.argv[2:]:
-      if a.startswith('--'):
+      if a.startswith("--"):
         flags.append(a)
       else:
         params.append(a)
