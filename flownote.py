@@ -128,17 +128,19 @@ def commit(params, flags):
   run_cmd(cmd, "Unable to list files")
 
 def push(params, flags):
-  if len(params) == 0:
-    eprint("FLOWNOTE-ERROR: Missing version\n")
-    return sys.exit(2)
-
-  tag = params[0]
-  remote = params[1] if len(params) == 2 else "origin"
-  branch = params[2] if len(params) == 3 else "master"
 
   run_cmd("git pull -X ours --no-edit", "Unable to merge automatically")
-  run_cmd("git tag {} || true".format(tag))
-  run_cmd("git push {1} {2} && git push {1} {0} && dvc push".format(tag, remote, branch), "Unable to push")
+  try:
+    tag_str = subprocess.check_output(['git', 'for-each-ref', '--sort=-taggerdate', '--format', '%(refname:short)', 'refs/tags', '--count=1'])
+    tag = int(tag_str.rstrip()) + 1
+  except subprocess.CalledProcessError:
+    tag = 1
+  except ValueError:
+    tag = 1
+
+  message = params[0] if len(params) >= 1 else tag
+  run_cmd("git tag -a {} -m '{}' || true".format(tag, message))
+  run_cmd("git push origin master && git push origin {} && dvc push".format(tag), "Unable to push")
 
 def scan_and_unzip():
   zip_files = []
@@ -155,7 +157,7 @@ def checkout(params, flags):
   tag = params[0] if len(params) >= 1 else "master"
   try:
     dvc_remote = subprocess.check_output(["dvc", "remote", "list"])
-  except subprocess.CalledProcessError as e:
+  except subprocess.CalledProcessError:
     dvc_remote = ""
 
   dvc_pull = "&& dvc pull" if dvc_remote.decode("utf-8") != "" else ""
@@ -165,17 +167,6 @@ def checkout(params, flags):
 def pull(params, flags):
   run_cmd("git pull origin master && dvc pull", "Unable to pull")
   if "--unzip" in flags: scan_and_unzip()
-
-def ls(params, flags):
-  files_str = subprocess.check_output(["git", "ls-files"])
-  git_files = files_str.decode("utf-8").split("\n")
-  dvc_files = []
-
-  for file in git_files:
-    if file.endswith(".dvc"):
-      dvc_files.append(os.path.splitext(file)[0])
-
-  oprint("\n".join(dvc_files))
 
 def version(params, flags):
   run_cmd("git describe --tags", "Unable to get current version")
@@ -192,7 +183,6 @@ commands = {
   "push": push,
   "checkout": checkout,
   "pull": pull,
-  "ls": ls,
   "version": version,
   "versions": versions,
   "remote": remote
@@ -225,8 +215,7 @@ commit:
   options: message
   example: flownote commit "new version"
 push:
-  options: version
-  example: flownote push version
+  example: flownote push
 checkout:
   options: version
   flags: --unzip
@@ -234,9 +223,6 @@ checkout:
 pull:
   flags: --unzip
   example: flownote pull
-ls:
-  desc: list current commited files
-  example: flownote ls
 version:
   desc: get current version
   example: flownote version
