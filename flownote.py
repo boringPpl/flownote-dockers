@@ -128,8 +128,9 @@ def commit(params, flags):
   run_cmd(cmd, "Unable to list files")
 
 def push(params, flags):
+  if not "--skip-merge" in flags:
+    run_cmd("git pull -X ours --no-edit origin master", "Unable to merge automatically")
 
-  run_cmd("git pull -X ours --no-edit", "Unable to merge automatically")
   try:
     tag_str = subprocess.check_output(['git', 'for-each-ref', '--sort=-taggerdate', '--format', '%(refname:short)', 'refs/tags', '--count=1'])
     tag = int(tag_str.rstrip()) + 1
@@ -215,6 +216,8 @@ commit:
   options: message
   example: flownote commit "new version"
 push:
+  desc: automatically fetch & merge git before push (using git strategy "ours")
+  flags: --skip-merge
   example: flownote push
 checkout:
   options: version
