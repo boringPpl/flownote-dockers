@@ -156,13 +156,10 @@ def scan_and_unzip():
 
 def checkout(params, flags):
   tag = params[0] if len(params) >= 1 else "master"
-  try:
-    dvc_remote = subprocess.check_output(["dvc", "remote", "list"])
-  except subprocess.CalledProcessError:
-    dvc_remote = ""
 
-  dvc_pull = "&& dvc pull" if dvc_remote.decode("utf-8") != "" else ""
-  run_cmd("git checkout {} && git clean -fd {} && dvc checkout".format(tag, dvc_pull), "Unable to checkout")
+  run_cmd("git checkout {} && git clean -fd".format(tag), "Unable to checkout")
+  os.system("dvc pull")
+  run_cmd("dvc checkout", "Unable to checkout")
   if "--unzip" in flags: scan_and_unzip()
 
 def pull(params, flags):
