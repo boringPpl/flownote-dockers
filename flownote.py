@@ -141,7 +141,7 @@ def push(params, flags):
 
   message = params[0] if len(params) >= 1 else tag
   run_cmd("git tag -a {} -m '{}' || true".format(tag, message))
-  run_cmd("git push origin master && git push origin {} && dvc push".format(tag), "Unable to push")
+  run_cmd("git push origin HEAD:master && git push origin {} && dvc push".format(tag), "Unable to push")
 
 def scan_and_unzip():
   zip_files = []
