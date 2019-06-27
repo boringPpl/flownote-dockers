@@ -129,7 +129,7 @@ def commit(params, flags):
 
 def push(params, flags):
   if not "--skip-merge" in flags:
-    run_cmd("git pull -X ours --no-edit origin master", "Unable to merge automatically")
+    run_cmd("git pull -X ours --no-edit --tags origin master", "Unable to merge automatically")
 
   try:
     tag_str = subprocess.check_output(['git', 'for-each-ref', '--sort=-taggerdate', '--format', '%(refname:short)', 'refs/tags', '--count=1'])
@@ -163,7 +163,7 @@ def checkout(params, flags):
   if "--unzip" in flags: scan_and_unzip()
 
 def pull(params, flags):
-  run_cmd("git pull origin master && dvc pull", "Unable to pull")
+  run_cmd("git pull --tags origin master && dvc pull", "Unable to pull")
   if "--unzip" in flags: scan_and_unzip()
 
 def version(params, flags):
