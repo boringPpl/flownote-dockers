@@ -6,8 +6,13 @@ import sys
 import subprocess
 import zipfile
 import re
+import base64
+import json
+import urllib2
 
 sys.tracebacklimit = None
+FLOWNOTE_URL = os.environ.get("FLOWNOTE_URL", "https://api.flownote.ai/apollo")
+FLOWNOTE_TOKEN = os.environ.get("FLOWNOTE_TOKEN")
 
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
@@ -172,6 +177,89 @@ def version(params, flags):
 def versions(params, flags):
   run_cmd("git for-each-ref --sort=-taggerdate --format '%(refname:short) | %(subject)' refs/tags", "Unable to list versions")
 
+def request(query, variables):
+  req = urllib2.Request(FLOWNOTE_URL)
+  req.add_header('Content-Type', 'application/json')
+  req.add_header('KernelToken', FLOWNOTE_TOKEN)
+
+  response = urllib2.urlopen(req, json.dumps({
+    "query": query,
+    "variables": variables,
+  }))
+  json_response = json.loads(response.read())
+  errors = json_response.get("errors")
+  if errors:
+    eprint("FLOWNOTE-ERROR: {}\n".format(errors[0]["message"]))
+    sys.exit(2)
+  return json_response["data"]
+
+def request_datasets(dataset_ids):
+  query = '''
+    query($filter: ContentListFilterInputType) {
+      datasetsPaginate(filter: $filter) {
+        data {
+          id
+          slug
+          downloadOption {
+            url
+            protocol
+          }
+        }
+      }
+    }
+  '''
+  variables = { "filter": { "ids": dataset_ids } }
+  response = request(query, variables)
+  return response["datasetsPaginate"]["data"]
+
+def build_dataset_dir(dataset):
+  return "/flownote/input/{}".format(dataset["slug"])
+
+def download(ds):
+  downloadOption = ds["downloadOption"]
+  dataset_dir = build_dataset_dir(ds)
+  dataset_file = "{}/{}.zip".format(dataset_dir, ds["id"])
+
+  if downloadOption["protocol"] == "HTTP":
+    run_cmd("mkdir -p {} && wget {} -O {}".format(dataset_dir, downloadOption["url"], dataset_file))
+    unzip([dataset_file])
+    os.system("rm -rf {}".format(dataset_file))
+  elif downloadOption["protocol"] == "GIT":
+    clone([downloadOption["url"], dataset_dir], [])
+    os.system("cd {} && dvc pull".format(dataset_dir))
+    os.system("cd -")
+  else:
+    eprint("FLOWNOTE-ERROR: Invalid Protocol\n")
+    sys.exit(2)
+
+  return dataset_dir
+
+def pull_datasets(dataset_ids):
+  dss = request_datasets(dataset_ids)
+
+  if len(dss) == 0:
+    eprint("FLOWNOTE-ERROR: Dataset Not Found\n")
+    sys.exit(2)
+
+  dirs = []
+  for ds in dss:
+    url = ds["downloadOption"].get("url")
+    if url: dirs.append(download(ds))
+
+  oprint(','.join(dirs))
+  return dirs
+
+def datasets(params, flags):
+  if len(params) < 2:
+    eprint("FLOWNOTE-ERROR: Missing dataset ids\n")
+    sys.exit(2)
+
+  if params[0] == "pull":
+    return pull_datasets(params[1:len(params)])
+  else:
+    eprint("FLOWNOTE-ERROR: Unsupported Commands\n")
+    sys.exit(2)
+
 commands = {
   "init": init,
   "add": add,
@@ -183,7 +271,8 @@ commands = {
   "pull": pull,
   "version": version,
   "versions": versions,
-  "remote": remote
+  "remote": remote,
+  "datasets": datasets,
 }
 
 help_command = """Commands:
@@ -229,6 +318,9 @@ version:
 versions:
   desc: list all the versions you pushed
   example: flownote versions
+datasets:
+  desc: pull datasets from flownote server
+  example: flownote datasets pull id1 id2
 """
 
 if __name__ == "__main__":
