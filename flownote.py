@@ -188,6 +188,7 @@ def request(query, variables):
   }))
   json_response = json.loads(response.read())
   errors = json_response.get("errors")
+
   if errors:
     eprint("FLOWNOTE-ERROR: {}\n".format(errors[0]["message"]))
     sys.exit(2)
@@ -260,6 +261,54 @@ def datasets(params, flags):
     eprint("FLOWNOTE-ERROR: Unsupported Commands\n")
     sys.exit(2)
 
+def request_notebook(nb_id, path):
+  query = '''
+    mutation($id: ID!, $uniqPath: String) {
+      topicSnapshotCreate(id: $id, uniqPath: $uniqPath)
+    }
+  '''
+  variables = { "id": nb_id, "uniqPath": path }
+  response = request(query, variables)
+
+  return response["topicSnapshotCreate"]
+
+def request_output(nb_id, path):
+  query = '''
+    mutation($id: ID!, $uniqPath: String!) {
+      topicOutputCreate(id: $id, uniqPath: $uniqPath)
+    }
+  '''
+  variables = { "id": nb_id, "uniqPath": path }
+  response = request(query, variables)
+
+  return response["topicOutputCreate"]
+
+def upload_output(nb_id, path, output):
+  url = request_output(nb_id, output)
+  run_cmd("wget --header='Content-Type: text/html' --method PUT --body-file={} '{}'".format(path, url))
+
+def run_notebook(nb_id, path, output):
+  url = request_notebook(nb_id, path)
+  file_name = "{}.ipynb".format(nb_id)
+  html_file_name = "{}.html".format(nb_id)
+
+  run_cmd("wget {0} -O {1} && jupyter nbconvert --no-input --execute {1}".format(url, file_name))
+  if (output):
+    upload_output(nb_id, "./{}".format(html_file_name), output)
+
+def notebook(params, flags):
+  if len(params) < 2:
+    eprint("FLOWNOTE-ERROR: Missing notebook id\n")
+    sys.exit(2)
+
+  if params[0] == "run":
+    snapshot = params[2] if len(params) > 2 else None
+    output = params[3] if len(params) > 3 else None
+    return run_notebook(params[1], snapshot, output)
+  else:
+    eprint("FLOWNOTE-ERROR: Unsupported Commands\n")
+    sys.exit(2)
+
 commands = {
   "init": init,
   "add": add,
@@ -273,6 +322,7 @@ commands = {
   "versions": versions,
   "remote": remote,
   "datasets": datasets,
+  "notebook": notebook,
 }
 
 help_command = """Commands:
@@ -321,6 +371,9 @@ versions:
 datasets:
   desc: pull datasets from flownote server
   example: flownote datasets pull id1 id2
+notebook:
+  desc: run notebook from flownote server
+  example: flownote notebook run id snapshot output
 """
 
 if __name__ == "__main__":
