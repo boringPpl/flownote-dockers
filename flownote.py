@@ -222,7 +222,7 @@ def download(ds):
   dataset_file = "{}/{}.zip".format(dataset_dir, ds["id"])
 
   if downloadOption["protocol"] == "HTTP":
-    run_cmd("mkdir -p {} && wget {} -O {}".format(dataset_dir, downloadOption["url"], dataset_file))
+    run_cmd("mkdir -p {} && wget '{}' -O '{}'".format(dataset_dir, downloadOption["url"], dataset_file))
     unzip([dataset_file])
     os.system("rm -rf {}".format(dataset_file))
   elif downloadOption["protocol"] == "GIT":
@@ -292,7 +292,8 @@ def run_notebook(nb_id, path, output):
   file_name = "{}.ipynb".format(nb_id)
   html_file_name = "{}.html".format(nb_id)
 
-  run_cmd("wget {0} -O {1} && jupyter nbconvert --no-input --execute {1}".format(url, file_name))
+  run_cmd("wget '{0}' -O '{1}' && jupyter nbconvert --no-input --execute '{1}'".format(url, file_name))
+
   if (output):
     upload_output(nb_id, "./{}".format(html_file_name), output)
 
