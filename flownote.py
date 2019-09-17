@@ -9,10 +9,12 @@ import re
 import base64
 import json
 import urllib2
+import json
 
 sys.tracebacklimit = None
 FLOWNOTE_URL = os.environ.get("FLOWNOTE_URL", "https://api.flownote.ai/apollo")
 FLOWNOTE_TOKEN = os.environ.get("FLOWNOTE_TOKEN")
+FLOWNOTE_DATASOURCE_CRED_PATH = "/flownote/datasources"
 
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
@@ -261,6 +263,91 @@ def datasets(params, flags):
     eprint("FLOWNOTE-ERROR: Unsupported Commands\n")
     sys.exit(2)
 
+def find_datasource_by_id(datasource_id):
+  query = '''
+    query datasourceById($id: ID!) {
+      datasource(id: $id) {
+        id
+        title
+        type
+        defaultUser
+        defaultPassword
+        databaseName
+        secretName
+        host
+        port
+        bigQueryProject
+        bigQueryDataset
+      }
+    }
+  '''
+  variables = {"id": datasource_id}
+  response = request(query, variables)
+
+  return response["datasource"]
+
+datasource_connection_protocol = {
+  "PRESTO": "presto",
+  "POSTGRESQL": "postgresql+psycopg2",
+  "MYSQL": "mysql+pymysql",
+  "REDSHIFT": "redshift+psycopg2",
+  # "BIQQUERY": "bigquery",
+  "ORACLE": "oracle"
+}
+
+def get_destination(user, password, host, port):
+  auth = ''
+  if user:
+    if password:
+      auth = "{}:{}".format(user, password)
+    else:
+      auth = user
+  location = "{}:{}".format(host, port) if port else host
+  return "{}@{}".format(auth, location) if auth else location
+
+def generate_datasource_connection_string(datasource):
+  datasource_type = datasource.get('type')
+  database_name = datasource.get('databaseName')
+  protocol = datasource_connection_protocol.get(datasource_type)
+  host = datasource.get('host')
+  port = datasource.get('port')
+  user = datasource.get('defaultUser')
+  password = datasource.get('defaultPassword')
+  datasource_id = datasource.get('id')
+  credential_path = os.path.join(FLOWNOTE_DATASOURCE_CRED_PATH, datasource_id)
+
+  # load custom credential
+  # custom credential is injected by k8s
+  if os.path.exists(credential_path):
+    with open(credential_path) as f:
+      custom_credential = json.load(f)
+      if custom_credential.get('user'):
+        user = custom_credential.get('user')
+      if custom_credential.get('password'):
+        password = custom_credential.get('password')
+      
+  destination = get_destination(user, password, host, port)
+  return "{}://{}/{}".format(protocol, destination, database_name)
+
+# TODO: will support list all later
+datasources_commands = ['desc', 'connection_string']
+def datasources(params, flags):
+  cmd = params[0]
+  if not cmd in datasources_commands:
+    eprint("FLOWNOTE-ERROR: unsupported command\n")
+    sys.exit(2)
+  datasource_id = params[1]
+  if not datasource_id:
+    eprint("FLOWNOTE-ERROR: Missing datasource id\n")
+    sys.exit(2)
+  
+  datasource = find_datasource_by_id(datasource_id)
+  if cmd == 'desc':
+    return datasource
+
+  if cmd == 'connection_string':
+    return generate_datasource_connection_string(datasource)
+
 def request_notebook(nb_id, path):
   query = '''
     mutation($id: ID!, $uniqPath: String) {
@@ -323,6 +410,7 @@ commands = {
   "versions": versions,
   "remote": remote,
   "datasets": datasets,
+  "datasources": datasources,
   "notebook": notebook,
 }
 
@@ -372,6 +460,9 @@ versions:
 datasets:
   desc: pull datasets from flownote server
   example: flownote datasets pull id1 id2
+datasources
+  desc: datasources from flownote server
+  example: flownote datasources desc id1
 notebook:
   desc: run notebook from flownote server
   example: flownote notebook run id snapshot output
