@@ -522,5 +522,4 @@ if __name__ == "__main__":
 
   parser = parsers.get(command)
   args = parser(sys.argv[2:])
-  print(args)
   commands[command](args)
