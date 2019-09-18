@@ -345,11 +345,16 @@ def datasources(params, flags):
     sys.exit(2)
   
   datasource = find_datasource_by_id(datasource_id)
+  result = ''
+
   if cmd == 'desc':
-    return datasource
+    result = json.dumps(datasource, indent=2)
 
   if cmd == 'connection_string':
-    return generate_datasource_connection_string(datasource)
+    result = generate_datasource_connection_string(datasource)
+
+  oprint(result)
+  return sys.exit(0)
 
 def request_notebook(nb_id, path):
   query = '''
