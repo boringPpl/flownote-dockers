@@ -9,7 +9,7 @@ import re
 import base64
 import json
 import urllib2
-import json
+import argparse
 
 sys.tracebacklimit = None
 FLOWNOTE_URL = os.environ.get("FLOWNOTE_URL", "https://api.flownote.ai/apollo")
@@ -71,43 +71,41 @@ def unzip(files):
         else:
           zipObj.extractall()
 
-def init(params, flags):
+def init(params):
   if not os.path.exists(".git"):
     run_cmd("git init", "Unable to initialize Git")
 
   if not os.path.exists(".dvc"):
     run_cmd("dvc init", "Unable to initialize DVC")
 
-def remote(params, flags):
+def remote(params):
+  print(params)
   def check_params():
-    if len(params) < 2:
+    if not params.url:
       eprint("FLOWNOTE-ERROR: Missing remoteUrl\n")
       sys.exit(2)
 
-  if params[0] == "metadata":
+  if params.action == "metadata":
     check_params()
     run_cmd("git remote remove origin >/dev/null 2>&1 || true")
-    run_cmd("git remote add origin {}".format(params[1]))
-  elif params[0] == "data":
+    run_cmd("git remote add origin {}".format(params.url))
+  elif params.action == "data":
     check_params()
     run_cmd("dvc remote remove origin >/dev/null 2>&1 || true")
-    run_cmd("dvc remote add -d origin {}".format(params[1]))
-  elif params[0] == "list":
+    run_cmd("dvc remote add -d origin {}".format(params.url))
+  elif params.action == "list":
     run_cmd("git remote -v")
     run_cmd("dvc remote list")
-  else:
-    eprint("FLOWNOTE-ERROR: Unsupported Commands\n")
-    sys.exit(2)
 
-def add(params, flags):
-  if len(params) == 0: return
+def add(params):
+  add_cmd = "dvc add " + " ".join(map(str, params.targets))
 
-  if "--zip" not in flags:
-    return run_cmd("dvc add " + " ".join(map(str, params)), "Unable to add files")
+  if not params.zip:
+    return run_cmd(add_cmd, "Unable to add files")
 
   files = []
 
-  for file_path in params:
+  for file_path in params.targets:
     if os.path.isdir(file_path):
       formatted_path = re.sub(r"/$", "", file_path)
       zip_name = zip_dir(formatted_path)
@@ -116,37 +114,32 @@ def add(params, flags):
       zip_name = zip_file(file_path)
       files.append(zip_name)
 
-  run_cmd("dvc add " + " ".join(files), "Unable to add files")
+  return run_cmd(add_cmd, "Unable to add files")
 
-def remove(params, flags):
-  if len(params) == 0: return
-  run_cmd("dvc remove -p -f " + " ".join(map(format_dvc, params)), "Unable to remove files")
+def remove(params):
+  run_cmd("dvc remove -p -f " + " ".join(map(format_dvc, params.targets)), "Unable to remove files")
 
-def clone(params, flags):
-  run_cmd("git clone " + " ".join(map(str, params)), "Unable to clone repo")
+def clone(params):
+  outputDir = params.dir if params.dir else ""
+  run_cmd(" ".join(["git clone", params.url, outputDir]), "Unable to clone repo")
 
-def commit(params, flags):
-  if len(params) == 0:
-    eprint("FLOWNOTE-ERROR: Missing message\n")
-    return sys.exit(2)
+def commit(params):
+  cmd = "git ls-files --other --modified --exclude-standard | grep '.dvc\\|.gitignore' | xargs git add && git commit -m '{}'".format(params.message)
+  run_cmd(cmd, "Unable to commit")
 
-  msg = params[0]
-  cmd = "git ls-files --other --modified --exclude-standard | grep '.dvc\\|.gitignore' | xargs git add && git commit -m '{}'".format(msg)
-  run_cmd(cmd, "Unable to list files")
-
-def push(params, flags):
-  if not "--skip-merge" in flags:
+def push(params):
+  if not params.skip_merge:
     run_cmd("git pull -X ours --no-edit --tags origin master", "Unable to merge automatically")
 
   try:
-    tag_str = subprocess.check_output(['git', 'for-each-ref', '--sort=-taggerdate', '--format', '%(refname:short)', 'refs/tags', '--count=1'])
+    tag_str = subprocess.check_output(["git", "for-each-ref", "--sort=-taggerdate", "--format", "%(refname:short)", "refs/tags", "--count=1"])
     tag = int(tag_str.rstrip()) + 1
   except subprocess.CalledProcessError:
     tag = 1
   except ValueError:
     tag = 1
 
-  message = params[0] if len(params) >= 1 else tag
+  message = params.version or tag
   run_cmd("git tag -a {} -m '{}' || true".format(tag, message))
   run_cmd("git push origin HEAD:master && git push origin {} && dvc push".format(tag), "Unable to push")
 
@@ -161,28 +154,29 @@ def scan_and_unzip():
 
   unzip(zip_files)
 
-def checkout(params, flags):
-  tag = params[0] if len(params) >= 1 else "master"
+def checkout(params):
+  print(params)
+  tag = params.version or "master"
 
   run_cmd("git checkout {} && git clean -fd".format(tag), "Unable to checkout")
   os.system("dvc pull")
   run_cmd("dvc checkout", "Unable to checkout")
-  if "--unzip" in flags: scan_and_unzip()
+  if params.unzip: scan_and_unzip()
 
-def pull(params, flags):
+def pull(params):
   run_cmd("git pull --tags origin master && dvc pull", "Unable to pull")
-  if "--unzip" in flags: scan_and_unzip()
+  if params.unzip: scan_and_unzip()
 
-def version(params, flags):
+def version(params):
   run_cmd("git describe --tags", "Unable to get current version")
 
-def versions(params, flags):
+def versions(params):
   run_cmd("git for-each-ref --sort=-taggerdate --format '%(refname:short) | %(subject)' refs/tags", "Unable to list versions")
 
 def request(query, variables):
   req = urllib2.Request(FLOWNOTE_URL)
-  req.add_header('Content-Type', 'application/json')
-  req.add_header('KernelToken', FLOWNOTE_TOKEN)
+  req.add_header("Content-Type", "application/json")
+  req.add_header("KernelToken", FLOWNOTE_TOKEN)
 
   response = urllib2.urlopen(req, json.dumps({
     "query": query,
@@ -197,7 +191,7 @@ def request(query, variables):
   return json_response["data"]
 
 def request_datasets(dataset_ids):
-  query = '''
+  query = """
     query($filter: ContentListFilterInputType) {
       datasetsPaginate(filter: $filter) {
         data {
@@ -210,7 +204,7 @@ def request_datasets(dataset_ids):
         }
       }
     }
-  '''
+  """
   variables = { "filter": { "ids": dataset_ids } }
   response = request(query, variables)
   return response["datasetsPaginate"]["data"]
@@ -228,7 +222,7 @@ def download(ds):
     unzip([dataset_file])
     os.system("rm -rf {}".format(dataset_file))
   elif downloadOption["protocol"] == "GIT":
-    clone([downloadOption["url"], dataset_dir], [])
+    clone({ "url": downloadOption["url"], "dir": dataset_dir })
     os.system("cd {} && dvc pull".format(dataset_dir))
     os.system("cd -")
   else:
@@ -249,19 +243,11 @@ def pull_datasets(dataset_ids):
     url = ds["downloadOption"].get("url")
     if url: dirs.append(download(ds))
 
-  oprint(','.join(dirs))
+  oprint(",".join(dirs))
   return dirs
 
-def datasets(params, flags):
-  if len(params) < 2:
-    eprint("FLOWNOTE-ERROR: Missing dataset ids\n")
-    sys.exit(2)
-
-  if params[0] == "pull":
-    return pull_datasets(params[1:len(params)])
-  else:
-    eprint("FLOWNOTE-ERROR: Unsupported Commands\n")
-    sys.exit(2)
+def datasets(params):
+  return pull_datasets(params.ids)
 
 def find_datasource_by_id(datasource_id):
   query = '''
@@ -328,51 +314,41 @@ def generate_datasource_connection_string(datasource):
         user = custom_credential.get('user')
       if custom_credential.get('password'):
         password = custom_credential.get('password')
-      
+
   destination = get_destination(user, password, host, port)
   return "{}://{}/{}".format(protocol, destination, database_name)
 
 # TODO: will support list all later
-datasources_commands = ['desc', 'connection_string']
-def datasources(params, flags):
-  cmd = params[0]
-  if not cmd in datasources_commands:
-    eprint("FLOWNOTE-ERROR: unsupported command\n")
-    sys.exit(2)
-  datasource_id = params[1]
-  if not datasource_id:
-    eprint("FLOWNOTE-ERROR: Missing datasource id\n")
-    sys.exit(2)
-  
-  datasource = find_datasource_by_id(datasource_id)
+def datasources(params):
+  datasource = find_datasource_by_id(params.id)
   result = ''
 
-  if cmd == 'desc':
+  if params.cmd == 'desc':
     result = json.dumps(datasource, indent=2)
 
-  if cmd == 'connection_string':
+  if params.cmd == 'connection_string':
     result = generate_datasource_connection_string(datasource)
 
   oprint(result)
   return sys.exit(0)
 
 def request_notebook(nb_id, path):
-  query = '''
+  query = """
     mutation($id: ID!, $uniqPath: String) {
       topicSnapshotCreate(id: $id, uniqPath: $uniqPath)
     }
-  '''
+  """
   variables = { "id": nb_id, "uniqPath": path }
   response = request(query, variables)
 
   return response["topicSnapshotCreate"]
 
 def request_output(nb_id, path):
-  query = '''
+  query = """
     mutation($id: ID!, $uniqPath: String!) {
       topicOutputCreate(id: $id, uniqPath: $uniqPath)
     }
-  '''
+  """
   variables = { "id": nb_id, "uniqPath": path }
   response = request(query, variables)
 
@@ -382,30 +358,115 @@ def upload_output(nb_id, path, output):
   url = request_output(nb_id, output)
   run_cmd("wget --header='Content-Type: text/html' --method PUT --body-file={} '{}'".format(path, url))
 
-def run_notebook(nb_id, path, output):
-  url = request_notebook(nb_id, path)
-  file_name = "{}.ipynb".format(nb_id)
-  html_file_name = "{}.html".format(nb_id)
+def run_notebook(params):
+  url = request_notebook(params.id, params.snapshot)
+  file_name = "{}.ipynb".format(params.id)
+  html_file_name = "{}.html".format(params.id)
 
   run_cmd("wget '{0}' -O '{1}' && jupyter nbconvert --no-input --execute '{1}'".format(url, file_name))
 
-  if (output):
-    upload_output(nb_id, "./{}".format(html_file_name), output)
+  if (params.output):
+    upload_output(nb_id, "./{}".format(html_file_name), params.output)
 
-def notebook(params, flags):
-  if len(params) < 2:
-    eprint("FLOWNOTE-ERROR: Missing notebook id\n")
-    sys.exit(2)
+def notebook(params):
+  return run_notebook(params)
 
-  if params[0] == "run":
-    snapshot = params[2] if len(params) > 2 else None
-    output = params[3] if len(params) > 3 else None
-    return run_notebook(params[1], snapshot, output)
-  else:
-    eprint("FLOWNOTE-ERROR: Unsupported Commands\n")
-    sys.exit(2)
+def init_parser(args):
+  parser = argparse.ArgumentParser(description="Initialize dataset", usage="%(prog)s init")
+  return parser.parse_args(args)
+
+def remote_parser(args):
+  parser = argparse.ArgumentParser(description="List/Set dataset remote")
+  parser.add_argument("action", type=str, help="metadata/data/list", choices=["metadata", "data", "list"])
+  parser.add_argument("--url", action="store", type=str, help="remote url")
+  return parser.parse_args(args)
+
+def add_parser(args):
+  parser = argparse.ArgumentParser(description="Add file/folder to dataset", usage="%(prog)s add [-h] [--zip] targets [targets ...]")
+  parser.add_argument("targets", type=str, nargs="+", help="file path")
+  parser.add_argument("--zip", action="store_true", default=False, help="zip file/folder before add")
+  return parser.parse_args(args)
+
+def remove_parser(args):
+  parser = argparse.ArgumentParser(description="Remove file/folder from dataset", usage="%(prog)s remove [-h] targets [targets ...]")
+  parser.add_argument("targets", type=str, nargs="+", help="file path")
+  return parser.parse_args(args)
+
+def clone_parser(args):
+  parser = argparse.ArgumentParser(description="Clone dataset repo", usage="%(prog)s clone [-h] url [dir]")
+  parser.add_argument("url", type=str, help="repo url")
+  parser.add_argument("dir", type=str, nargs="?", help="output dir")
+  return parser.parse_args(args)
+
+def commit_parser(args):
+  parser = argparse.ArgumentParser(description="Commit dataset changes", usage="%(prog)s commit [-h] message")
+  parser.add_argument("message", type=str, help="changes description")
+  return parser.parse_args(args)
+
+def push_parser(args):
+  parser = argparse.ArgumentParser(description="Push dataset changes", usage="%(prog)s push [-h] [--skip-merge] [version]")
+  parser.add_argument("version", type=str, nargs="?", help="dataset version")
+  parser.add_argument("--skip-merge", action="store_true", default=False, help="fetch & merge before push")
+  return parser.parse_args(args)
+
+def checkout_parser(args):
+  parser = argparse.ArgumentParser(description="Checkout dataset version", usage="%(prog)s checkout [-h] [--unzip] [version]")
+  parser.add_argument("version", type=str, nargs="?", help="dataset version")
+  parser.add_argument("--unzip", action="store_true", default=False, help="unzip after checkout")
+  return parser.parse_args(args)
+
+def pull_parser(args):
+  parser = argparse.ArgumentParser(description="Pull dataset", usage="%(prog)s pull [-h] [--unzip]")
+  parser.add_argument("--unzip", action="store_true", default=False, help="unzip after pull")
+  return parser.parse_args(args)
+
+def version_parser(args):
+  parser = argparse.ArgumentParser(description="Get current dataset version", usage="%(prog)s version [-h]")
+  return parser.parse_args(args)
+
+def versions_parser(args):
+  parser = argparse.ArgumentParser(description="List dataset versions", usage="%(prog)s versions [-h]")
+  return parser.parse_args(args)
+
+def datasets_parser(args):
+  parser = argparse.ArgumentParser(description="Pull flownote datasets", usage="%(prog)s [-h] datasets {pull} ids [ids ...]")
+  parser.add_argument("action", type=str, choices=['pull'])
+  parser.add_argument("ids", type=str, nargs="+", help="flownote dataset id")
+  return parser.parse_args(args)
+
+def notebook_parser(args):
+  parser = argparse.ArgumentParser(description="Run flownote notebook", usage="%(prog)s [-h] notebook {run} id")
+  parser.add_argument("action", type=str, choices=['run'])
+  parser.add_argument("id", type=str, help="flownote dataset id")
+  parser.add_argument("--snapshot", type=str, help="snapshot path")
+  parser.add_argument("--output", type=str, help="output path")
+  return parser.parse_args(args)
+
+def datasources_parser(args):
+  parser = argparse.ArgumentParser(description="Get flownote datasources information", usage="%(prog)s [-h] datasources {desc,connection_string} id")
+  parser.add_argument("cmd", type=str, choices=['desc', 'connection_string'])
+  parser.add_argument("id", type=str, help="flownote datasource id")
+  return parser.parse_args(args)
+
+parsers = {
+  "init": init_parser,
+  "add": add_parser,
+  "remove": remove_parser,
+  "clone": clone_parser,
+  "commit": commit_parser,
+  "push": push_parser,
+  "checkout": checkout_parser,
+  "pull": pull_parser,
+  "version": version_parser,
+  "versions": versions_parser,
+  "remote": remote_parser,
+  "datasets": datasets_parser,
+  "notebook": notebook_parser,
+  "datasources": datasources_parser,
+}
 
 commands = {
+  # Manipulate Dataset
   "init": init,
   "add": add,
   "remove": remove,
@@ -417,82 +478,49 @@ commands = {
   "version": version,
   "versions": versions,
   "remote": remote,
+  # Other
   "datasets": datasets,
-  "datasources": datasources,
   "notebook": notebook,
+  "datasources": datasources,
 }
 
-help_command = """Commands:
-===============================================================
-init:
-  example: flownote init
-remote:
-  metadata:
-    desc: set origin remote for git repo (metadata only)
-    example: flownote remote metadata https://github.com/project
-  data:
-    desc: set origin remote for dvc repo (data storage)
-    example: flownote remote data s3://bucket/path/to/dir
-  list:
-    example: flownote remote list
-add:
-  options: targets [targets]
-  flags: --zip
-  example: flownote add path/to/dir path/to/file
-remove:
-  options: targets [targets]
-  example: flownote remove path/to/dir path/to/file
-clone:
-  options: url, outputDir
-  example: flownote clone url outputDir
-commit:
-  options: message
-  example: flownote commit "new version"
-push:
-  desc: automatically fetch & merge git before push (using git strategy "ours")
-  flags: --skip-merge
-  example: flownote push
-checkout:
-  options: version
-  flags: --unzip
-  example: flownote checkout version
-pull:
-  flags: --unzip
-  example: flownote pull
-version:
-  desc: get current version
-  example: flownote version
-versions:
-  desc: list all the versions you pushed
-  example: flownote versions
-datasets:
-  desc: pull datasets from flownote server
-  example: flownote datasets pull id1 id2
-datasources
-  desc: datasources from flownote server
-  example: flownote datasources desc id1
-notebook:
-  desc: run notebook from flownote server
-  example: flownote notebook run id snapshot output
+help_command = """usage: flownote [-h] command
+
+List of commands:
+
+manipulate dataset
+  init         Initialize dataset
+  remote       List/Set dataset remote
+  add          Add file/folder to dataset
+  remove       Remove file/folder from dataset
+  clone        Clone dataset repo
+  commit       Commit dataset changes
+  push         Push dataset changes
+  checkout     Checkout dataset version
+  pull         Pull dataset
+  version      Get current dataset version
+  versions     List dataset versions
+
+flownote commands (require flownote token)
+  datasets     Pull flownote datasets
+  notebook     Run flownote notebook
+  datasources  Get flownote datasources information
+
+optional arguments:
+  -h, --help  show this help message and exit
 """
 
 if __name__ == "__main__":
-  if len(sys.argv) == 1 or "--help" in sys.argv:
-    print(help_command)
+  if len(sys.argv) == 1 or (len(sys.argv) >= 2 and sys.argv[1] in ["-h", "--help"]):
+    oprint(help_command)
     sys.exit(0)
 
   command = os.path.basename(sys.argv[1])
-  if command in commands:
-    params = []
-    flags = []
-    for a in sys.argv[2:]:
-      if a.startswith("--"):
-        flags.append(a)
-      else:
-        params.append(a)
+  if command not in commands:
+    oprint(help_command)
+    sys.exit(0)
 
-    commands[command](params, flags)
-  else:
-    eprint("Unsupported command!\nPlease use flownote --help")
-    sys.exit(2)
-
+  parser = parsers.get(command)
+  args = parser(sys.argv[2:])
+  print(args)
+  commands[command](args)
