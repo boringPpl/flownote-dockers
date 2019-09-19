@@ -222,7 +222,7 @@ def download(ds):
     unzip([dataset_file])
     os.system("rm -rf {}".format(dataset_file))
   elif downloadOption["protocol"] == "GIT":
-    clone({ "url": downloadOption["url"], "dir": dataset_dir })
+    clone(argparse.Namespace(url=downloadOption["url"], dir=dataset_dir))
     os.system("cd {} && dvc pull".format(dataset_dir))
     os.system("cd -")
   else:
