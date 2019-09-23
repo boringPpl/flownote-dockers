@@ -366,7 +366,7 @@ def run_notebook(params):
   run_cmd("wget '{0}' -O '{1}' && jupyter nbconvert --no-input --execute '{1}'".format(url, file_name))
 
   if (params.output):
-    upload_output(nb_id, "./{}".format(html_file_name), params.output)
+    upload_output(params.id, "./{}".format(html_file_name), params.output)
 
 def notebook(params):
   return run_notebook(params)
