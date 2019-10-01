@@ -277,7 +277,7 @@ datasource_connection_protocol = {
   "POSTGRESQL": "postgresql+psycopg2",
   "MYSQL": "mysql+pymysql",
   "REDSHIFT": "redshift+psycopg2",
-  # "BIQQUERY": "bigquery",
+  "BIGQUERY": "bigquery",
   "ORACLE": "oracle"
 }
 
@@ -296,8 +296,11 @@ def generate_datasource_connection_string(datasource):
   if not datasource_type in datasource_connection_protocol:
     eprint("FLOWNOTE-ERROR: unsupported datasource type\n")
     sys.exit(2)
-  database_name = datasource.get('databaseName')
   protocol = datasource_connection_protocol.get(datasource_type)
+  bigQueryProject = datasource.get('bigQueryProject')
+  if (datasource_type == 'BIGQUERY'):
+    return "{}://{}".format(protocol, bigQueryProject)
+  database_name = datasource.get('databaseName')
   host = datasource.get('host')
   port = datasource.get('port')
   user = datasource.get('defaultUser')
